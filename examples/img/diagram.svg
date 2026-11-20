@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120" viewBox="0 0 320 120" role="img" aria-label="Markdown to browser">
+  <rect width="320" height="120" rx="12" fill="#eef3fb" stroke="#4a7bd0"/>
+  <rect x="24" y="36" width="96" height="48" rx="8" fill="#fff" stroke="#4a7bd0"/>
+  <text x="72" y="66" font-family="sans-serif" font-size="16" text-anchor="middle" fill="#1f2d4d">.md file</text>
+  <path d="M126 60h64" stroke="#4a7bd0" stroke-width="3"/><path d="M184 50l12 10-12 10" fill="none" stroke="#4a7bd0" stroke-width="3"/>
+  <rect x="200" y="36" width="96" height="48" rx="8" fill="#fff" stroke="#4a7bd0"/>
+  <text x="248" y="66" font-family="sans-serif" font-size="16" text-anchor="middle" fill="#1f2d4d">browser</text>
+</svg>

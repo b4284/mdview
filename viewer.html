@@ -1,0 +1,132 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>mdview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link id="themecss" rel="stylesheet" href="/__assets/github-markdown-css/github-markdown.css">
+<style>
+  body { margin: 0; background: #fff; }
+  .markdown-body { box-sizing: border-box; max-width: 980px; margin: 0 auto; padding: 32px 24px; }
+  @media (prefers-color-scheme: dark) { body[data-theme="auto"] { background: #0d1117; } }
+
+  #themesel { position: fixed; top: 10px; right: 12px; z-index: 10; opacity: .6;
+              font: 13px system-ui, sans-serif; padding: 3px 6px; border-radius: 6px; }
+  #themesel:hover, #themesel:focus { opacity: 1; }
+  @media print { #themesel { display: none; } }
+
+  /* custom themes: layered over the GitHub light or dark base stylesheet */
+  body.custom { background: var(--bg); }
+  body.custom .markdown-body { color: var(--fg); background: var(--bg); font-family: var(--font, inherit); }
+  body.custom .markdown-body a { color: var(--link); }
+  body.custom .markdown-body h1, body.custom .markdown-body h2 { border-bottom-color: var(--border); }
+  body.custom .markdown-body h6 { color: var(--muted); }
+  body.custom .markdown-body hr { background: var(--border); }
+  body.custom .markdown-body blockquote { color: var(--muted); border-left-color: var(--border); }
+  body.custom .markdown-body code, body.custom .markdown-body tt { background: var(--code-bg); }
+  body.custom .markdown-body pre, body.custom .markdown-body .highlight pre { background: var(--code-bg); }
+  body.custom .markdown-body pre code { background: transparent; }
+  body.custom .markdown-body table th, body.custom .markdown-body table td { border-color: var(--border); }
+  body.custom .markdown-body table tr { background: var(--bg); border-top-color: var(--border); }
+  body.custom .markdown-body table tr:nth-child(2n) { background: var(--code-bg); }
+  body.custom #themesel { color: var(--fg); background: var(--code-bg); border: 1px solid var(--border); }
+
+  body[data-theme="sepia"] { --bg:#f4ecd8; --fg:#433422; --muted:#7a6a53; --link:#8b4513; --code-bg:#eadfc6; --border:#d3c4a3;
+                             --font: Georgia, "Iowan Old Style", "Times New Roman", serif; }
+  body[data-theme="solarized-light"] { --bg:#fdf6e3; --fg:#586e75; --muted:#93a1a1; --link:#268bd2; --code-bg:#eee8d5; --border:#e0d9c0; }
+  body[data-theme="solarized-dark"]  { --bg:#002b36; --fg:#93a1a1; --muted:#657b83; --link:#268bd2; --code-bg:#073642; --border:#0f4a5a; }
+  body[data-theme="nord"]            { --bg:#2e3440; --fg:#d8dee9; --muted:#9aa5b8; --link:#88c0d0; --code-bg:#3b4252; --border:#4c566a; }
+</style>
+</head>
+<body data-theme="auto">
+<select id="themesel" title="Theme" aria-label="Theme"></select>
+<article id="out" class="markdown-body">Loading…</article>
+<script src="/__assets/marked/marked.min.js"></script>
+<script src="/__assets/mermaid/dist/mermaid.min.js"></script>
+<script>
+  const CSS = "/__assets/github-markdown-css/";
+  // base: which GitHub stylesheet to load. custom: layered theme defined above. bg: page background for file themes.
+  const THEMES = [
+    { id: "auto",            label: "GitHub (follow system)", base: "github-markdown.css" },
+    { id: "light",           label: "GitHub Light",           base: "github-markdown-light.css", dark: false, bg: "#ffffff" },
+    { id: "dark",            label: "GitHub Dark",            base: "github-markdown-dark.css",  dark: true,  bg: "#0d1117" },
+    { id: "dimmed",          label: "GitHub Dark Dimmed",     base: "github-markdown-dark-dimmed.css", dark: true, bg: "#22272e" },
+    { id: "hc",              label: "GitHub Dark High Contrast", base: "github-markdown-dark-high-contrast.css", dark: true, bg: "#0a0c10" },
+    { id: "light-cb",        label: "GitHub Light Colorblind", base: "github-markdown-light-colorblind.css", dark: false, bg: "#ffffff" },
+    { id: "dark-cb",         label: "GitHub Dark Colorblind",  base: "github-markdown-dark-colorblind.css", dark: true, bg: "#0d1117" },
+    { id: "sepia",           label: "Sepia (serif)",          base: "github-markdown-light.css", dark: false, custom: true },
+    { id: "solarized-light", label: "Solarized Light",        base: "github-markdown-light.css", dark: false, custom: true },
+    { id: "solarized-dark",  label: "Solarized Dark",         base: "github-markdown-dark.css",  dark: true,  custom: true },
+    { id: "nord",            label: "Nord",                   base: "github-markdown-dark.css",  dark: true,  custom: true },
+  ];
+
+  const out = document.getElementById("out");
+  const sel = document.getElementById("themesel");
+  const params = new URLSearchParams(location.search);
+  const file = params.get("f");
+  let curTheme = THEMES[0];
+
+  function isDark() {
+    return curTheme.dark ?? matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  function applyTheme(id) {
+    curTheme = THEMES.find(t => t.id === id) || THEMES[0];
+    document.getElementById("themecss").href = CSS + curTheme.base;
+    document.body.dataset.theme = curTheme.id;
+    document.body.classList.toggle("custom", !!curTheme.custom);
+    document.body.style.background = curTheme.bg || "";
+    sel.value = curTheme.id;
+    mermaid.initialize({ startOnLoad: false, theme: isDark() ? "dark" : "default" });
+  }
+
+  for (const t of THEMES) sel.add(new Option(t.label, t.id));
+  let saved = null;
+  try { saved = localStorage.getItem("mdview-theme"); } catch (e) {}
+  applyTheme(saved);
+  sel.addEventListener("change", () => {
+    try { localStorage.setItem("mdview-theme", sel.value); } catch (e) {}
+    applyTheme(sel.value);
+    last = null; load();            // re-render so Mermaid picks up the new theme
+  });
+
+  const renderer = new marked.Renderer();
+  const baseCode = renderer.code.bind(renderer);
+  renderer.code = (code, lang, escaped) => {
+    // marked 12 passes (code, infostring, escaped)
+    const text = typeof code === "object" ? code.text : code;
+    const l = typeof code === "object" ? code.lang : lang;
+    if (l === "mermaid") return `<pre class="mermaid">${text.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</pre>`;
+    return baseCode(code, lang, escaped);
+  };
+
+  let last = null;
+  async function load() {
+    const r = await fetch("/" + encodeURI(file) + "?raw=1&t=" + Date.now());
+    if (!r.ok) { out.textContent = "Cannot load " + file + " (" + r.status + ")"; return; }
+    const md = await r.text();
+    if (md === last) return;            // unchanged: skip redraw
+    last = md;
+    const y = scrollY;
+    out.innerHTML = marked.parse(md, { renderer, gfm: true });
+    // relative links/images resolve against the file's own directory
+    const dir = "/" + file.split("/").slice(0, -1).join("/");
+    out.querySelectorAll("img[src]").forEach(i => {
+      const s = i.getAttribute("src");
+      if (!/^([a-z]+:|\/|#)/i.test(s)) i.src = (dir === "/" ? "" : dir) + "/" + s;
+    });
+    out.querySelectorAll("a[href$='.md']").forEach(a => {
+      const h = a.getAttribute("href");
+      if (!/^([a-z]+:|#)/i.test(h)) {
+        const base = h.startsWith("/") ? h.slice(1) : (dir === "/" ? "" : dir.slice(1) + "/") + h;
+        a.href = "/?f=" + encodeURIComponent(base);
+      }
+    });
+    await mermaid.run({ querySelector: ".mermaid" });
+    scrollTo(0, y);
+    document.title = file.split("/").pop();
+  }
+  if (!file) { out.textContent = "No file given."; }
+  else { load(); setInterval(load, 1000); }   // poll for live reload
+</script>
+</body>
+</html>
