@@ -26,13 +26,23 @@ The installer runs `npm install` and links `mdview` into `~/.local/bin`. Make su
 
 ```sh
 mdview README.md               # serve the file's directory and open it in the browser
-mdview ~/notes                 # serve a directory (shows an index of .md files)
-mdview ~/notes --open          # same, but open the browser
-mdview file.md --no-open       # do not open the browser
+mdview ~/notes                 # serve a directory (index of .md files) and open it
+mdview ~/notes --no-open       # do not open a browser
 mdview file.md -p 9000         # use another port (default 8642)
+mdview file.md --no-check      # skip the startup checks below
 ```
 
-When the target is a file, the browser opens automatically. Under WSL it tries `wslview`, then `explorer.exe`, then `xdg-open`.
+The browser opens by default for files and directories. Under WSL `mdview` tries `wslview`, then `explorer.exe`, then `xdg-open`.
+
+## Errors
+
+`mdview` exits with an error, and does not start the server, when:
+
+- the path does not exist
+- the file cannot be read, looks binary, or is not valid UTF-8
+- an `[!INCLUDE]` or `[!code-*]` file it refers to is missing or outside the served folder
+
+Missing local images and linked `.md` pages only produce a warning, since the rest of the page still renders. Problems that only show up in the browser, such as a Mermaid diagram that fails to parse or a script error, are printed to the terminal as `mdview: warning: ...`. Use `--no-check` to serve a file despite the startup errors.
 
 Try the demo, which exercises every feature:
 

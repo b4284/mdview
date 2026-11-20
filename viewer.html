@@ -143,6 +143,16 @@
     if (p.startsWith("/")) return joinPath(info.docfxRoot, p.slice(1));
     return joinPath(baseDir, p);
   }
+  // Send render problems to the terminal running mdview (once per distinct message).
+  const reported = new Set();
+  function report(msg) {
+    msg = `${file}: ${msg}`;
+    if (reported.has(msg)) return;
+    reported.add(msg);
+    try { fetch("/__report", { method: "POST", body: msg }); } catch (e) {}
+  }
+  addEventListener("error", e => report("script error: " + e.message));
+  addEventListener("unhandledrejection", e => report("script error: " + (e.reason && e.reason.message || e.reason)));
   async function fetchText(path) {
     try {
       const r = await fetch("/" + encPath(path) + "?raw=1&t=" + Date.now());
@@ -200,7 +210,7 @@
         const rp = resolve(splitRef(p)[0], dir);
         if (rp == null) return m;
         const t = await fetchText(rp);
-        if (t == null) return `\n> **mdview:** include not found: \`${p}\`\n`;
+        if (t == null) { report("include not found: " + p); return `\n> **mdview:** include not found: \`${p}\`\n`; }
         let inc = splitFront(t).body;
         const idir = dirOf(rp);
         if (idir !== dir) inc = rebase(inc, idir);
@@ -211,7 +221,7 @@
         const rp = resolve(pp, dir);
         if (rp == null) return m;
         const t = await fetchText(rp);
-        if (t == null) return `\n> **mdview:** code file not found: \`${pp}\`\n`;
+        if (t == null) { report("code snippet file not found: " + pp); return `\n> **mdview:** code file not found: \`${pp}\`\n`; }
         let lines = t.replace(/\r\n/g, "\n").split("\n");
         const rg = suf.match(/^#L(\d+)(?:-L?(\d+))?/i);          // #L10-L20 or #L10
         if (rg) { const a = +rg[1], b = rg[2] ? +rg[2] : a; lines = lines.slice(a - 1, b); }
@@ -345,7 +355,7 @@
     busy = true;
     try {
       const raw = await fetchText(file);
-      if (raw == null) { out.textContent = "Cannot load " + file; return; }
+      if (raw == null) { out.textContent = "Cannot load " + file; report("cannot load the file"); return; }
       const { body, meta } = splitFront(raw);
       const dir = dirOf(file);
       const md = await expand(body, dir, 0);
@@ -354,7 +364,8 @@
       const y = scrollY;
       out.innerHTML = marked.parse(md, { renderer, gfm: true });
       decorate(dir);
-      try { await mermaid.run({ querySelector: ".mermaid" }); } catch (e) { console.warn("mermaid:", e); }
+      try { await mermaid.run({ querySelector: ".mermaid" }); }
+      catch (e) { console.warn("mermaid:", e); report("Mermaid diagram error: " + String(e && e.message || e).split("\n")[0]); }
       buildTabs();
       const h1 = out.querySelector("h1");
       document.title = (meta.title && String(meta.title)) || (h1 && h1.textContent) || file.split("/").pop();

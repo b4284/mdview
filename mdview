@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """mdview: tiny local Markdown + Mermaid viewer. Nothing leaves your machine.
 
-usage: mdview [DIR_OR_FILE] [-p PORT] [--host 127.0.0.1] [--open]
+usage: mdview [DIR_OR_FILE] [-p PORT] [--host 127.0.0.1] [--no-open] [--no-check]
 """
-import argparse, html, json, mimetypes, os, subprocess, sys
+import argparse, html, json, mimetypes, os, re, subprocess, sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -24,11 +24,105 @@ def find_up(start, names, stop):
         d = os.path.dirname(d)
 
 
+INC_RE = re.compile(r"\[!include\s*\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)\s*\]", re.I)
+CODE_RE = re.compile(r"\[!code-[\w#+-]+\s*\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)\s*\]", re.I)
+LINK_RE = re.compile(r"(!?)\[[^\]]*\]\(\s*([^)\s]+)")
+FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+
+
+def read_markdown(path):
+    """Return (text, None) or (None, reason) for a file mdview can render."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError as e:
+        return None, e.strerror or str(e)
+    if b"\x00" in data[:8192]:
+        return None, "looks like a binary file, not text"
+    try:
+        return data.decode("utf-8-sig"), None
+    except UnicodeDecodeError as e:
+        return None, f"not valid UTF-8 (byte {e.start}); re-save it as UTF-8"
+
+
+def scan(path, root, problems, warnings, seen, depth=0):
+    """Look for things that cannot render: unreadable files, missing includes/snippets (errors),
+    and missing local images or linked .md files (warnings). Mirrors the viewer's path rules."""
+    if path in seen or depth > 5:
+        return
+    seen.add(path)
+    text, why = read_markdown(path)
+    if text is None:
+        problems.append(f"{path}: {why}")
+        return
+    here = os.path.dirname(path)
+    rel = lambda p: os.path.relpath(p)
+
+    def target(ref):
+        ref = re.split(r"[?#]", ref, maxsplit=1)[0]
+        if not ref or re.match(r"^([a-z][a-z0-9+.-]*:|//)", ref, re.I):
+            return None
+        if ref.startswith("~/") or ref.startswith("/"):
+            return os.path.realpath(os.path.join(root, ref.lstrip("~").lstrip("/")))
+        return os.path.realpath(os.path.join(here, ref))
+
+    def inside(p):
+        return p == root or p.startswith(root + os.sep)
+
+    fence = None
+    for n, line in enumerate(text.split("\n"), 1):
+        m = FENCE_RE.match(line)
+        if m and not fence:
+            fence = m[1]
+            continue
+        if fence:
+            if m and m[1][0] == fence[0] and len(m[1]) >= len(fence) and not line.strip().strip("`~"):
+                fence = None
+            continue
+        for rx, what in ((INC_RE, "include"), (CODE_RE, "code snippet file")):
+            for mm in rx.finditer(line):
+                t = target(mm[1])
+                if t is None:
+                    continue
+                if not inside(t):
+                    problems.append(f"{rel(path)}:{n}: {what} {mm[1]!r} is outside the served folder")
+                elif not os.path.isfile(t):
+                    problems.append(f"{rel(path)}:{n}: {what} not found: {re.split(r'[?#]', mm[1], maxsplit=1)[0]}")
+                elif rx is INC_RE:
+                    scan(t, root, problems, warnings, seen, depth + 1)
+        stripped = INC_RE.sub("", CODE_RE.sub("", line))
+        for mm in LINK_RE.finditer(stripped):
+            ref = mm[2]
+            if ref.startswith("#") or ref.lower().startswith("xref:"):
+                continue
+            t = target(ref)
+            if t is None:
+                continue
+            is_img = bool(mm[1])
+            if is_img or re.search(r"\.(md|markdown)$", re.split(r"[?#]", ref, maxsplit=1)[0], re.I):
+                if not inside(t) or not os.path.exists(t):
+                    warnings.append(f"{rel(path)}:{n}: {'image' if is_img else 'linked page'} not found: {ref}")
+
+
 class H(SimpleHTTPRequestHandler):
     root = os.getcwd()
 
     def log_message(self, *a):  # quiet
         pass
+
+    def do_POST(self):
+        """The viewer reports render problems (bad diagram, missing include, script error) here."""
+        if urlparse(self.path).path != "/__report":
+            return self._send(404, "not found", "text/plain")
+        try:
+            n = min(int(self.headers.get("Content-Length", 0)), 4096)
+        except ValueError:
+            n = 0
+        msg = self.rfile.read(n).decode("utf-8", "replace")
+        msg = "".join(c if c.isprintable() else " " for c in msg)[:500]
+        print(f"mdview: warning: {msg}", file=sys.stderr, flush=True)
+        self.send_response(204)
+        self.end_headers()
 
     def _send(self, code, body, ctype="text/html; charset=utf-8"):
         if isinstance(body, str):
@@ -131,10 +225,13 @@ def main():
     ap.add_argument("target", nargs="?", default=".")
     ap.add_argument("-p", "--port", type=int, default=8642)
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--open", action="store_true", help="open in the Windows/default browser (implied when TARGET is a file)")
-    ap.add_argument("--no-open", action="store_true", help="never open a browser")
+    ap.add_argument("--open", action="store_true", help="open the browser (the default; kept for compatibility)")
+    ap.add_argument("--no-open", action="store_true", help="do not open a browser")
+    ap.add_argument("--no-check", action="store_true", help="skip the startup checks for unreadable files and missing includes")
     a = ap.parse_args()
 
+    if not os.path.exists(a.target):
+        sys.exit(f"mdview: error: no such file or directory: {a.target}")
     target = os.path.realpath(a.target)
     start = "/"
     if os.path.isfile(target):
@@ -155,12 +252,22 @@ def main():
         H.root = target
 
     if not os.path.isdir(ASSETS):
-        sys.exit(f"missing {ASSETS}; run: cd {APP} && npm install")
+        sys.exit(f"mdview: error: missing {ASSETS}; run: cd {APP} && npm install")
+
+    if os.path.isfile(target) and not a.no_check:
+        problems, warnings = [], []
+        scan(target, H.root, problems, warnings, set())
+        for w in warnings:
+            print(f"mdview: warning: {w}", file=sys.stderr)
+        if problems:
+            for p in problems:
+                print(f"mdview: error: {p}", file=sys.stderr)
+            sys.exit(f"mdview: {len(problems)} problem(s) would stop this file rendering correctly (use --no-check to serve anyway)")
 
     srv = ThreadingHTTPServer((a.host, a.port), H)
     url = f"http://localhost:{a.port}{start}"
     print(f"serving {H.root}\n  {url}")
-    if a.open or (os.path.isfile(target) and not a.no_open):
+    if not a.no_open:
         for cmd in (["wslview", url], ["explorer.exe", url], ["xdg-open", url]):
             try:
                 subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
