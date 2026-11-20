@@ -7,6 +7,7 @@ A tiny local Markdown viewer with Mermaid support. A small Python server renders
 - Live reload: the page re-renders about a second after the file changes
 - 11 themes in a dropdown (GitHub light/dark variants, Sepia, Solarized, Nord); your choice is remembered
 - Fast start: no file watcher and no directory walk
+- Understands [DocFX](https://dotnet.github.io/docfx/) articles: includes, code snippets, alerts, tabs, front matter and `toc.yml` (see below)
 - Works well under WSL: the page renders in your Windows browser with native font rendering
 
 ## Install
@@ -38,6 +39,29 @@ Try the demo, which exercises every feature:
 ```sh
 mdview examples/example.md
 ```
+
+## DocFX support
+
+`mdview` is a quick local preview for DocFX articles, not a replacement for `docfx build`. Try the sample project:
+
+```sh
+mdview examples/docfx/articles/intro.md
+```
+
+When you open a file inside a project, `mdview` serves from the folder holding `docfx.json`, so `~/` links and includes outside the article's own folder resolve.
+
+| DocFX feature | What mdview does |
+|---|---|
+| YAML front matter | Hidden; its `title` becomes the tab title |
+| Links to other `.md` files, with `#anchors` and `~/` paths | Open in the viewer; heading anchors work |
+| `[!INCLUDE [t](path)]` | Expanded in place (nested, up to 5 levels), with relative images fixed up |
+| `[!code-lang[t](path#L10-L20)]` | Replaced by a code block of those lines |
+| `> [!NOTE]`, `TIP`, `IMPORTANT`, `WARNING`, `CAUTION` | Styled callouts |
+| `#### [Title](#tab/id)` tabs | Real tabs; groups with the same id switch together |
+| `toc.yml` | Sidebar navigation from the nearest `toc.yml`; nested `href: folder/` tocs load on demand; toggle with the ☰ button |
+| `<xref:uid>` and `xref:` links | Shown as plain text with a dotted underline: they need DocFX's API metadata, which `mdview` doesn't have |
+
+Not supported: code snippet tags (`?name=`, `#tag`; the whole file is shown), `[!VIDEO]`, `[!div]`, custom `docfx.json` path mappings (`src`/`dest`), and tabs inside lists or quotes.
 
 ## Customising
 

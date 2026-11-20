@@ -1,0 +1,7 @@
+{
+  "build": {
+    "content": [{ "files": ["**/*.md", "**/toc.yml"] }],
+    "resource": [{ "files": ["images/**"] }],
+    "dest": "_site"
+  }
+}

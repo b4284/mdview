@@ -3,13 +3,25 @@
 
 usage: mdview [DIR_OR_FILE] [-p PORT] [--host 127.0.0.1] [--open]
 """
-import argparse, html, mimetypes, os, subprocess, sys
+import argparse, html, json, mimetypes, os, subprocess, sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 APP = os.path.dirname(os.path.realpath(__file__))  # viewer.html and node_modules live beside this script
 ASSETS = os.path.join(APP, "node_modules")
 SKIP = {".git", "node_modules", "__pycache__", ".venv"}
+
+
+def find_up(start, names, stop):
+    """Walk from `start` up to `stop` (inclusive) looking for any of `names`; returns (dir, name) or None."""
+    d = start
+    while True:
+        for n in names:
+            if os.path.isfile(os.path.join(d, n)):
+                return d, n
+        if d == stop or os.path.dirname(d) == d:
+            return None
+        d = os.path.dirname(d)
 
 
 class H(SimpleHTTPRequestHandler):
@@ -55,6 +67,9 @@ class H(SimpleHTTPRequestHandler):
         if path == "/" and "f" in q:
             return self._file(os.path.join(APP, "viewer.html"))
 
+        if path == "/__info":
+            return self._info(q.get("f", [""])[0])
+
         p = self._safe(self.root, path.lstrip("/"))
         if not p:
             return self._send(403, "forbidden", "text/plain")
@@ -69,6 +84,21 @@ class H(SimpleHTTPRequestHandler):
             self.end_headers()
             return
         return self._file(p)
+
+    def _info(self, f):
+        """DocFX hints for a file: the docfx.json directory (for `~/` links) and the nearest toc.yml."""
+        p = self._safe(self.root, f)
+        d = os.path.dirname(p) if p else None
+        info = {"docfxRoot": "", "toc": None}
+        if d:
+            hit = find_up(d, ["docfx.json"], self.root)
+            if hit:
+                r = os.path.relpath(hit[0], self.root)
+                info["docfxRoot"] = "" if r == "." else r.replace(os.sep, "/")
+            hit = find_up(d, ["toc.yml", "toc.yaml"], self.root)
+            if hit:
+                info["toc"] = os.path.relpath(os.path.join(*hit), self.root).replace(os.sep, "/")
+        self._send(200, json.dumps(info), "application/json")
 
     def _index(self, d):
         rel = os.path.relpath(d, self.root)
@@ -108,8 +138,19 @@ def main():
     target = os.path.realpath(a.target)
     start = "/"
     if os.path.isfile(target):
-        H.root = os.path.dirname(target)
-        start = "/" + os.path.basename(target)
+        # Inside a DocFX project, serve from the folder holding docfx.json so that
+        # `~/` links and includes outside the article's own folder resolve.
+        here = os.path.dirname(target)
+        probe, hit = here, None
+        for _ in range(8):
+            if os.path.isfile(os.path.join(probe, "docfx.json")):
+                hit = probe
+                break
+            if os.path.dirname(probe) == probe:
+                break
+            probe = os.path.dirname(probe)
+        H.root = hit or here
+        start = "/" + os.path.relpath(target, H.root).replace(os.sep, "/")
     else:
         H.root = target
 
